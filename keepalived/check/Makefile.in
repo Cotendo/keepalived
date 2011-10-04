@@ -14,7 +14,7 @@ COMPILE	 = $(CC) $(CFLAGS) $(DEFS)
 
 OBJS = 	check_daemon.o check_data.o check_parser.o \
 	check_api.o check_tcp.o check_http.o check_ssl.o \
-	check_smtp.o check_misc.o ipwrapper.o ipvswrapper.o
+	check_smtp.o check_misc.o check_file.o ipwrapper.o ipvswrapper.o
 
 HEADERS = $(OBJS:.o=.h)
 
@@ -42,7 +42,7 @@ check_parser.o: check_parser.c ../include/check_parser.h \
   ../include/global_parser.h ../../lib/parser.h ../../lib/memory.h \
   ../../lib/utils.h
 check_api.o: check_api.c ../include/check_api.h ../../lib/parser.h \
-  ../../lib/memory.h ../../lib/utils.h ../include/check_misc.h \
+  ../../lib/memory.h ../../lib/utils.h ../include/check_misc.h ../include/check_file.h \
   ../include/check_tcp.h ../include/check_http.h ../include/check_ssl.h
 check_tcp.o: check_tcp.c ../include/check_tcp.h ../include/check_api.h \
   ../../lib/memory.h ../include/ipwrapper.h ../include/layer4.h \
@@ -57,6 +57,9 @@ check_smtp.o: check_smtp.c ../include/check_smtp.h ../include/check_api.h \
   ../../lib/memory.h ../include/ipwrapper.h ../include/smtp.h \
   ../../lib/utils.h ../../lib/notify.h ../../lib/parser.h ../include/daemon.h
 check_misc.o: check_misc.c ../include/check_misc.h ../include/check_api.h \
+  ../../lib/memory.h ../include/ipwrapper.h ../include/smtp.h \
+  ../../lib/utils.h ../../lib/notify.h ../../lib/parser.h ../include/daemon.h
+check_file.o: check_file.c ../include/check_file.h ../include/check_api.h \
   ../../lib/memory.h ../include/ipwrapper.h ../include/smtp.h \
   ../../lib/utils.h ../../lib/notify.h ../../lib/parser.h ../include/daemon.h
 ipwrapper.o: ipwrapper.c ../include/ipwrapper.h ../../lib/memory.h \

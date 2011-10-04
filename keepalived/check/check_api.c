@@ -29,6 +29,7 @@
 #include "utils.h"
 #include "logger.h"
 #include "global_data.h"
+#include "check_file.h"
 #include "check_misc.h"
 #include "check_smtp.h"
 #include "check_tcp.h"
@@ -212,6 +213,7 @@ void
 install_checkers_keyword(void)
 {
 	install_misc_check_keyword();
+	install_file_check_keyword();
 	install_smtp_check_keyword();
 	install_tcp_check_keyword();
 	install_http_check_keyword();

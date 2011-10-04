@@ -40,6 +40,12 @@ free_url(void *data)
 	url_t *url = data;
 	FREE(url->path);
 	FREE(url->digest);
+	FREE(url->match_response_regex);
+	if (url->is_match_response_pattern)
+		regfree (&url->match_response_pattern);
+	FREE(url->match_response_weight_regex);
+	if (url->is_match_response_weight_pattern)
+		regfree (&url->match_response_weight_pattern);
 	FREE(url);
 }
 
@@ -51,6 +57,12 @@ dump_url(void *data)
 	if (url->digest)
 		log_message(LOG_INFO, "           digest = %s",
 		       url->digest);
+	if (url->match_response_regex)
+		log_message(LOG_INFO, "           match_response = %s",
+		       url->match_response_regex);
+	if (url->match_response_weight_regex)
+		log_message(LOG_INFO, "           match_response_weight = %s",
+		       url->match_response_weight_regex);
 	if (url->status_code)
 		log_message(LOG_INFO, "           HTTP Status Code = %d",
 		       url->status_code);
@@ -180,6 +192,58 @@ digest_handler(vector strvec)
 }
 
 void
+match_response_regex_handler(vector strvec)
+{
+	http_checker_t *http_get_chk = CHECKER_GET();
+	url_t *url = LIST_TAIL_DATA(http_get_chk->url);
+
+	url->match_response_regex = CHECKER_VALUE_STRING(strvec);
+	int flags = REG_EXTENDED | REG_ICASE | REG_NOSUB | REG_NEWLINE;
+	int res = regcomp(&url->match_response_pattern, url->match_response_regex, flags);
+	if (res != 0)
+	{
+		log_message(LOG_ERR, "failed to compile regexp: %s", url->match_response_regex);
+	}
+	else
+	{
+		url->is_match_response_pattern = 1;
+	}
+}
+
+void
+match_response_weight_regex_handler(vector strvec)
+{
+	http_checker_t *http_get_chk = CHECKER_GET();
+	url_t *url = LIST_TAIL_DATA(http_get_chk->url);
+
+	url->match_response_weight_regex = CHECKER_VALUE_STRING(strvec);
+	int flags = REG_EXTENDED | REG_ICASE | REG_NEWLINE;
+	int res = regcomp(&url->match_response_weight_pattern, url->match_response_weight_regex, flags);
+	if (res != 0)
+	{
+		log_message(LOG_ERR, "failed to compile regexp: %s", url->match_response_weight_regex);
+	}
+	else
+	{
+		url->is_match_response_weight_pattern = 1;
+	}
+}
+
+void
+match_response_weight_subexp_id_handler(vector strvec)
+{
+	http_checker_t *http_get_chk = CHECKER_GET();
+	url_t *url = LIST_TAIL_DATA(http_get_chk->url);
+
+	url->match_response_weight_subexp_id = CHECKER_VALUE_INT(strvec);
+	if (url->match_response_weight_subexp_id < 1 || url->match_response_weight_subexp_id > MAX_WEIGHT_SUBEXP_ID)
+	{
+		log_message(LOG_ERR, "invalid weight_subexp_id for regex(%s). using 1", url->match_response_weight_regex);
+		url->match_response_weight_subexp_id = 1;
+	}
+}
+
+void
 status_code_handler(vector strvec)
 {
 	http_checker_t *http_get_chk = CHECKER_GET();
@@ -202,6 +266,9 @@ install_http_check_keyword(void)
 	install_sublevel();
 	install_keyword("path", &path_handler);
 	install_keyword("digest", &digest_handler);
+	install_keyword("match_response_regex", &match_response_regex_handler);
+	install_keyword("match_response_weight_regex", &match_response_weight_regex_handler);
+	install_keyword("match_response_weight_subexp_id", &match_response_weight_subexp_id_handler);
 	install_keyword("status_code", &status_code_handler);
 	install_sublevel_end();
 	install_sublevel_end();
@@ -222,6 +289,7 @@ install_ssl_check_keyword(void)
 	install_sublevel();
 	install_keyword("path", &path_handler);
 	install_keyword("digest", &digest_handler);
+	install_keyword("match_response_regex", &match_response_regex_handler);
 	install_keyword("status_code", &status_code_handler);
 	install_sublevel_end();
 	install_sublevel_end();
@@ -323,6 +391,8 @@ epilog(thread_t * thread, int method, int t, int c)
 			SSL_free(req->ssl);
 		if (req->buffer)
 			FREE(req->buffer);
+		if (req->response_buffer)
+			FREE(req->response_buffer);
 		FREE(req);
 		http_arg->req = NULL;
 		close(thread->u.fd);
@@ -478,6 +548,73 @@ http_handle_response(thread_t * thread, unsigned char digest[16]
 		}
 	}
 
+	if (req->response_buffer != NULL)
+	{
+		req->response_buffer [req->response_len] = '\0';
+
+		if (fetched_url->is_match_response_pattern) {
+			int res = regexec(&fetched_url->match_response_pattern, req->response_buffer, 0, NULL, 0);
+			DBG("HTTP match_response exp:%s result: %d"
+					, fetched_url->match_response_regex, res);
+			if (res != 0)
+			{
+				if (svr_checker_up(checker->id, checker->rs)) {
+					log_message(LOG_INFO,
+						   "HTTP response match error to [%s]:%d url(%s).",
+						   inet_sockaddrtos(&http_get_check->dst),
+						   ntohs(inet_sockaddrport(&http_get_check->dst)),
+						   fetched_url->path);
+					smtp_alert(checker->rs, NULL, NULL,
+						   "DOWN",
+						   "=> CHECK failed on service"
+						   " : HTTP status code mismatch <=");
+					update_svr_checker_state(DOWN, checker->id
+									 , checker->vs
+									 , checker->rs);
+				} else {
+					DBG("HTTP response match error to [%s]:%d url(%d)."
+						, inet_sockaddrtos(&http_get_check->dst)
+						, ntohs(inet_sockaddrport(&http_get_check->dst))
+						, http_arg->url_it + 1);
+					/*
+					 * We set retry iterator to max value to not retry
+					 * when service is already know as die.
+					 */
+					http_arg->retry_it = http_get_check->nb_get_retry;
+				}
+				return epilog(thread, 2, 0, 1);
+			}
+		}
+
+		if (fetched_url->is_match_response_weight_pattern) {
+
+			regmatch_t pmatch [MAX_WEIGHT_SUBEXP_ID];
+			memset (&pmatch, 0, sizeof (pmatch));
+			int res = regexec(&fetched_url->match_response_weight_pattern, req->response_buffer, MAX_WEIGHT_SUBEXP_ID, pmatch, 0);
+			DBG("HTTP match_response_weight exp:%s result: %d"
+					, fetched_url->match_response_weight_regex, res);
+			if (res == 0)
+			{
+				int pos = fetched_url->match_response_weight_subexp_id;
+				if (pos == 0)
+					pos = 1;
+				const char* pstart = req->response_buffer + pmatch [pos].rm_so;
+				const char* pend = req->response_buffer + pmatch [pos].rm_eo;
+				if (pend > pstart && pend - pstart <= req->response_len)
+				{
+					char* end;
+					int weight = strtol(pstart, &end, 10);
+					if (end == pend)
+					{
+						update_svr_wgt(weight, checker->vs, checker->rs);
+					}
+				}
+				//strtol()
+				//update_svr_wgt(status - 2, checker->vs, checker->rs);
+			}
+		}
+	}
+
 	return epilog(thread, 1, 0, 0) + 1;
 }
 
@@ -531,6 +668,25 @@ http_read_thread(thread_t * thread)
 	/* read the HTTP stream */
 	r = read(thread->u.fd, req->buffer + req->len,
 		 MAX_BUFFER_LENGTH - req->len);
+
+	if (r > 0 && req->response_buffer)
+	{
+		if (req->response_len + r > req->response_capacity)
+		{
+			int grow_size = (r > 1024) ? r : 1024;
+			void* new_buf = REALLOC(req->response_buffer, req->response_capacity + grow_size + 1); // +1 for null char
+			if (new_buf != NULL) // realloc failed?
+			{
+				req->response_buffer = (char*) new_buf;
+				req->response_capacity += grow_size;
+			}
+		}
+
+		int left = req->response_capacity - req->response_len;
+		int copy = (left > r) ? r : left;
+		memcpy (req->response_buffer+req->response_len, req->buffer+req->len, copy);
+		req->response_len += copy;
+	}
 
 	/* restore descriptor flags */
 	fcntl(thread->u.fd, F_SETFL, val);
@@ -599,6 +755,7 @@ http_response_thread(thread_t * thread)
 	http_checker_t *http_get_check = CHECKER_ARG(checker);
 	http_arg_t *http_arg = HTTP_ARG(http_get_check);
 	request_t *req = HTTP_REQ(http_arg);
+	url_t *fetched_url = fetch_next_url(http_get_check);
 
 	/* Handle read timeout */
 	if (thread->type == THREAD_READ_TIMEOUT)
@@ -611,6 +768,14 @@ http_response_thread(thread_t * thread)
 	req->len = 0;
 	req->error = 0;
 	MD5_Init(&req->context);
+
+	if (fetched_url != NULL && (fetched_url->is_match_response_pattern ||
+			fetched_url->is_match_response_weight_pattern))
+	{
+		req->response_buffer = (char *) MALLOC(MAX_BUFFER_LENGTH+1); // for null terminate
+		req->response_capacity = MAX_BUFFER_LENGTH;
+		req->response_len = 0;
+	}
 
 	/* Register asynchronous http/ssl read thread */
 	if (http_get_check->proto == PROTO_SSL)

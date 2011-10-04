@@ -1,0 +1,10 @@
+Makefile
+*.log
+config.status
+keepalived.spec
+keepalived/include/config.h
+*.o
+*.a
+*.tar.gz
+.project
+.cproject

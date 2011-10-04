@@ -26,6 +26,7 @@
 
 /* system includes */
 #include <stdio.h>
+#include <regex.h>
 #include <openssl/md5.h>
 #include <openssl/ssl.h>
 
@@ -44,6 +45,9 @@ typedef struct _request {
 	int error;
 	int status_code;
 	int len;
+	char *response_buffer;
+	int response_capacity;
+	int response_len;
 	SSL *ssl;
 	BIO *bio;
 	MD5_CTX context;
@@ -59,6 +63,15 @@ typedef struct _http_arg {
 typedef struct _url {
 	char *path;
 	char *digest;
+	char* match_response_regex;
+	int is_match_response_pattern;
+	regex_t match_response_pattern;
+
+	char* match_response_weight_regex;
+	int match_response_weight_subexp_id;
+	int is_match_response_weight_pattern;
+	regex_t match_response_weight_pattern;
+
 	int status_code;
 } url_t;
 
@@ -79,6 +92,7 @@ typedef struct _http_checker {
 #define MAX_BUFFER_LENGTH 4096
 #define PROTO_HTTP	0x01
 #define PROTO_SSL	0x02
+#define MAX_WEIGHT_SUBEXP_ID 10
 
 /* GET processing command */
 #define REQUEST_TEMPLATE "GET %s HTTP/1.0\r\n" \

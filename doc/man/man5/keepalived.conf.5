@@ -374,7 +374,7 @@ A virtual_server can be a declaration of one of
            notify_down <STRING>|<QUOTED-STRING> 
    
            # pick one healthchecker
-           # HTTP_GET|SSL_GET|TCP_CHECK|SMTP_CHECK|MISC_CHECK
+           # HTTP_GET|SSL_GET|TCP_CHECK|SMTP_CHECK|MISC_CHECK|FILE_CHECK
    
            # HTTP and SSL healthcheckers
            HTTP_GET|SSL_GET 
@@ -458,6 +458,18 @@ A virtual_server can be a declaration of one of
                #   (for example: exit status of 255 would set
                #     weight to 253)
                misc_dynamic
+           }
+
+           #FILE healthchecker, read the content of a file
+           FILE_CHECK 
+           {
+               # path to the file
+               file_path <STRING>|<QUOTED-STRING>
+
+               # If set, the content of the file become the weight (just like MISC_CHECK)
+               # If not set, if the content of the file is 0, then the result is success
+               # otherwise, it means that it failed
+               file_dynamic
            }
        } # realserver defn
     } # virtual service
