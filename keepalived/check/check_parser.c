@@ -19,7 +19,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include "check_parser.h"
@@ -78,6 +78,8 @@ delay_handler(vector strvec)
 {
 	virtual_server *vs = LIST_TAIL_DATA(check_data->vs);
 	vs->delay_loop = atoi(VECTOR_SLOT(strvec, 1)) * TIMER_HZ;
+	if (vs->delay_loop < TIMER_HZ)
+		vs->delay_loop = TIMER_HZ;
 }
 static void
 lbalgo_handler(vector strvec)

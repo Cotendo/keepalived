@@ -17,7 +17,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include "check_daemon.h"
@@ -40,6 +40,9 @@
 #include "parser.h"
 #include "vrrp_netlink.h"
 #include "vrrp_if.h"
+#ifdef _WITH_SNMP_
+  #include "check_snmp.h"
+#endif
 
 extern char *checkers_pidfile;
 
@@ -55,6 +58,10 @@ stop_check(void)
 	if (!(debug & 16))
 		clear_services();
 	ipvs_stop();
+#ifdef _WITH_SNMP_
+	if (snmp)
+		check_snmp_agent_close();
+#endif
 
 	/* Stop daemon */
 	pidfile_rm(checkers_pidfile);
@@ -88,6 +95,10 @@ start_check(void)
 #ifdef _WITH_VRRP_
 	init_interface_queue();
 	kernel_netlink_init();
+#endif
+#ifdef _WITH_SNMP_
+	if (!reload && snmp)
+		check_snmp_agent_init();
 #endif
 
 	/* Parse configuration file */
@@ -138,8 +149,6 @@ int reload_check_thread(thread_t *);
 void
 sighup_check(void *v, int sig)
 {
-	log_message(LOG_INFO, "Reloading Healthchecker child process(%d) on signal",
-		    getpid());
 	thread_add_event(master, reload_check_thread, NULL, 0);
 }
 
@@ -147,7 +156,6 @@ sighup_check(void *v, int sig)
 void
 sigend_check(void *v, int sig)
 {
-	log_message(LOG_INFO, "Terminating Healthchecker child process on signal");
 	if (master)
 		thread_add_terminate_event(master);
 }
@@ -219,7 +227,7 @@ check_respawn_thread(thread_t * thread)
 	}
 
 	/* We catch a SIGCHLD, handle it */
-	log_message(LOG_INFO, "Healthcheck child process(%d) died: Respawning", pid);
+	log_message(LOG_ALERT, "Healthcheck child process(%d) died: Respawning", pid);
 	start_check_child();
 	return 0;
 }
@@ -251,7 +259,7 @@ start_check_child(void)
 	}
 
 	/* Opening local CHECK syslog channel */
-	openlog(PROG_CHECK, LOG_PID | (debug & 1) ? LOG_CONS : 0, 
+	openlog(PROG_CHECK, LOG_PID | ((debug & 1) ? LOG_CONS : 0),
 		(log_facility==LOG_DAEMON) ? LOG_LOCAL2 : log_facility);
 
 	/* Child process part, write pidfile */
@@ -267,6 +275,9 @@ start_check_child(void)
 
 	/* change to / dir */
 	ret = chdir("/");
+	if (ret < 0) {
+		log_message(LOG_INFO, "Healthcheck child process: error chdir");
+	}
 
 	/* Set mask */
 	umask(0);

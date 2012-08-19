@@ -17,7 +17,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include "vrrp_scheduler.h"
@@ -37,6 +37,9 @@
 #include "main.h"
 #include "smtp.h"
 #include "signals.h"
+#ifdef _WITH_SNMP_
+#include "vrrp_snmp.h"
+#endif
 
 /* VRRP FSM (Finite State Machine) design.
  *
@@ -189,7 +192,7 @@ vrrp_init_state(list l)
 		/* In case of VRRP SYNC, we have to carefully check that we are
 		 * not running floating priorities on any VRRP instance.
 		 */
-		if (vrrp->sync) {
+		if (vrrp->sync && !vrrp->sync->global_tracking) {
 			element e;
 			tracked_sc *sc;
 			tracked_if *tip;
@@ -255,6 +258,9 @@ vrrp_init_state(list l)
 			vrrp->state = VRRP_STATE_BACK;
 			vrrp_smtp_notifier(vrrp);
 			notify_instance_exec(vrrp, VRRP_STATE_BACK);
+#ifdef _WITH_SNMP_
+			vrrp_snmp_instance_trap(vrrp);
+#endif
 
 			/* Init group if needed  */
 			if ((vgroup = vrrp->sync)) {
@@ -262,6 +268,9 @@ vrrp_init_state(list l)
 					vgroup->state = VRRP_STATE_BACK;
 					vrrp_sync_smtp_notifier(vgroup);
 					notify_group_exec(vgroup, VRRP_STATE_BACK);
+#ifdef _WITH_SNMP_
+					vrrp_snmp_group_trap(vgroup);
+#endif
 				}
 			}
 		}
@@ -641,6 +650,9 @@ vrrp_leave_fault(vrrp_rt * vrrp, char *buffer, int len)
 				vrrp->state = VRRP_STATE_BACK;
 				vrrp_smtp_notifier(vrrp);
 				notify_instance_exec(vrrp, VRRP_STATE_BACK);
+#ifdef _WITH_SNMP_
+				vrrp_snmp_instance_trap(vrrp);
+#endif
 			}
 		} else {
 			log_message(LOG_INFO, "VRRP_Instance(%s) Entering BACKUP STATE",
@@ -648,6 +660,9 @@ vrrp_leave_fault(vrrp_rt * vrrp, char *buffer, int len)
 			vrrp->state = VRRP_STATE_BACK;
 			vrrp_smtp_notifier(vrrp);
 			notify_instance_exec(vrrp, VRRP_STATE_BACK);
+#ifdef _WITH_SNMP_
+			vrrp_snmp_instance_trap(vrrp);
+#endif
 		}
 	}
 }
@@ -664,6 +679,9 @@ vrrp_goto_master(vrrp_rt * vrrp)
 		vrrp->state = VRRP_STATE_FAULT;
 		vrrp->ms_down_timer = 3 * vrrp->adver_int + VRRP_TIMER_SKEW(vrrp);
 		notify_instance_exec(vrrp, VRRP_STATE_FAULT);
+#ifdef _WITH_SNMP_
+		vrrp_snmp_instance_trap(vrrp);
+#endif
 	} else {
 		/* If becoming MASTER in IPSEC AH AUTH, we reset the anti-replay */
 		if (vrrp->ipsecah_counter->cycle) {
@@ -702,11 +720,11 @@ vrrp_update_priority(thread_t * thread)
 	prio_offset = 0;
 
 	/* Now we will sum the weights of all interfaces which are tracked. */
-	if (!vrrp->sync && !LIST_ISEMPTY(vrrp->track_ifp))
+	if ((!vrrp->sync || vrrp->sync->global_tracking) && !LIST_ISEMPTY(vrrp->track_ifp))
 		 prio_offset += vrrp_tracked_weight(vrrp->track_ifp);
 
 	/* Now we will sum the weights of all scripts which are tracked. */
-	if (!vrrp->sync && !LIST_ISEMPTY(vrrp->track_script))
+	if ((!vrrp->sync || vrrp->sync->global_tracking) && !LIST_ISEMPTY(vrrp->track_script))
 		prio_offset += vrrp_script_weight(vrrp->track_script);
 
 	if (vrrp->base_priority == VRRP_PRIO_OWNER) {
@@ -802,6 +820,9 @@ vrrp_fault(vrrp_rt * vrrp)
 		if (vrrp->init_state == VRRP_STATE_BACK) {
 			vrrp->state = VRRP_STATE_BACK;
 			notify_instance_exec(vrrp, VRRP_STATE_BACK);
+#ifdef _WITH_SNMP_
+			vrrp_snmp_instance_trap(vrrp);
+#endif
 		} else {
 			vrrp_goto_master(vrrp);
 		}
@@ -948,7 +969,14 @@ vrrp_script_thread(thread_t * thread)
 	closeall(0);
 	open("/dev/null", O_RDWR);
 	ret = dup(0);
+	if (ret < 0) {
+		log_message(LOG_INFO, "dup(0) error");
+	}
+
 	ret = dup(0);
+	if (ret < 0) {
+		log_message(LOG_INFO, "dup(0) error");
+	}
 
 	status = system_call(vscript->script);
 

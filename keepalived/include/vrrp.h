@@ -18,7 +18,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #ifndef _VRRP_H
@@ -74,6 +74,9 @@ typedef struct _vrrp_sgroup {
 	vector iname;		/* Set of VRRP instances in this group */
 	list index_list;	/* List of VRRP instances */
 	int state;		/* current stable state */
+	int global_tracking;	/* Use floating priority and scripts
+				 * All VRRP must share same tracking conf
+				 */
 
 	/* State transition notification */
 	int notify_exec;
@@ -91,6 +94,8 @@ typedef struct _vrrp_rt {
 	vrrp_sgroup *sync;	/* Sync group we belong to */
 	interface *ifp;		/* Interface we belong to */
 	int dont_track_primary; /* If set ignores ifp faults */
+	int vmac;		/* If set try to set VRRP VMAC */
+	char vmac_ifname[IFNAMSIZ]; /* Name of VRRP VMAC interface */
 	list track_ifp;		/* Interface state we monitor */
 	list track_script;	/* Script state we monitor */
 	uint32_t mcast_saddr;	/* Src IP address to use in VRRP IP header */

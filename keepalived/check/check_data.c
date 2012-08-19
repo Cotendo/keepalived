@@ -17,7 +17,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include <netdb.h>
@@ -214,7 +214,7 @@ dump_vs(void *data)
 	}
 
 	if (vs->s_svr) {
-		log_message(LOG_INFO, "   sorry server = %s:%d"
+		log_message(LOG_INFO, "   sorry server = [%s]:%d"
 				    , inet_sockaddrtos(&vs->s_svr->addr)
 				    , ntohs(inet_sockaddrport(&vs->s_svr->addr)));
 	}

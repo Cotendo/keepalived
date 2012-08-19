@@ -18,7 +18,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include <openssl/err.h>
@@ -109,6 +109,8 @@ alloc_http_get(char *proto)
 	    (!strcmp(proto, "HTTP_GET")) ? PROTO_HTTP : PROTO_SSL;
 	http_get_chk->url = alloc_list(free_url, dump_url);
 	http_get_chk->nb_get_retry = 1;
+	http_get_chk->connection_to = 5 * TIMER_HZ;
+	http_get_chk->delay_before_retry = 3 * TIMER_HZ;
 
 	return http_get_chk;
 }
@@ -145,6 +147,8 @@ connect_to_handler(vector strvec)
 {
 	http_checker_t *http_get_chk = CHECKER_GET();
 	http_get_chk->connection_to = CHECKER_VALUE_INT(strvec) * TIMER_HZ;
+	if (http_get_chk->connection_to < TIMER_HZ)
+		http_get_chk->connection_to = TIMER_HZ;
 }
 
 void
@@ -958,7 +962,7 @@ http_check_thread(thread_t * thread)
 						 thread->u.fd,
 						 http_get_check->connection_to);
 			} else {
-				DBG(LOG_INFO, "Connection trouble to: [%s]:%d."
+				DBG("Connection trouble to: [%s]:%d."
 					    , inet_sockaddrtos(&http_get_check->dst)
 					    , ntohs(inet_sockaddrport(&http_get_check->dst)));
 #ifdef _DEBUG_
@@ -1036,19 +1040,23 @@ http_connect_thread(thread_t * thread)
 
 	/* Create the socket */
 	if ((fd = socket(http_get_check->dst.ss_family, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-		DBG("WEB connection fail to create socket.");
+		log_message(LOG_INFO, "WEB connection fail to create socket. Rescheduling.");
+		thread_add_timer(thread->master, http_connect_thread, checker,
+				checker->vs->delay_loop);
+ 
 		return 0;
 	}
 
 	status = tcp_bind_connect(fd, &http_get_check->dst, &http_get_check->bindto);
-	if (status == connect_error) {
-		thread_add_timer(thread->master, http_connect_thread, checker,
-				 checker->vs->delay_loop);
-		return 0;
-	}
 
 	/* handle tcp connection status & register check worker thread */
-	tcp_connection_state(fd, status, thread, http_check_thread,
-			     http_get_check->connection_to);
+	if(tcp_connection_state(fd, status, thread, http_check_thread,
+			http_get_check->connection_to)) {
+		close(fd);
+		log_message(LOG_INFO, "WEB socket bind failed. Rescheduling");
+		thread_add_timer(thread->master, http_connect_thread, checker,
+				checker->vs->delay_loop);
+	}
+
 	return 0;
 }

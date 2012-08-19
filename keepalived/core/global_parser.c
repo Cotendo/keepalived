@@ -19,7 +19,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include <netdb.h>
@@ -79,6 +79,13 @@ email_handler(vector strvec)
 
 	free_strvec(email_vec);
 }
+#ifdef _WITH_SNMP_
+static void
+trap_handler(vector strvec)
+{
+	data->enable_traps = 1;
+}
+#endif
 
 void
 global_init_keywords(void)
@@ -92,4 +99,7 @@ global_init_keywords(void)
 	install_keyword("smtp_server", &smtpip_handler);
 	install_keyword("smtp_connect_timeout", &smtpto_handler);
 	install_keyword("notification_email", &email_handler);
+#ifdef _WITH_SNMP_
+	install_keyword("enable_traps", &trap_handler);
+#endif
 }

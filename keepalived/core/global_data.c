@@ -17,7 +17,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include <syslog.h>
@@ -164,4 +164,10 @@ dump_global_data(conf_data_t * global_data)
 		       data->email_from);
 		dump_list(data->email);
 	}
+#ifdef _WITH_SNMP_
+	if (data->enable_traps)
+		log_message(LOG_INFO, " SNMP Trap enabled");
+	else
+		log_message(LOG_INFO, " SNMP Trap disabled");
+#endif
 }

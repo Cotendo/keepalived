@@ -17,7 +17,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include "vrrp_data.h"
@@ -80,6 +80,8 @@ dump_vgroup(void *data)
 		str = VECTOR_SLOT(vgroup->iname, i);
 		log_message(LOG_INFO, "   monitor = %s", str);
 	}
+	if (vgroup->global_tracking)
+		log_message(LOG_INFO, "   Same tracking for all VRRP instances");
 	if (vgroup->script_backup)
 		log_message(LOG_INFO, "   Backup state transition script = %s",
 		       vgroup->script_backup);
@@ -116,7 +118,7 @@ dump_vscript(void *data)
 	log_message(LOG_INFO, "   Interval = %d sec", vscript->interval / TIMER_HZ);
 	log_message(LOG_INFO, "   Weight = %d", vscript->weight);
 	log_message(LOG_INFO, "   Rise = %d", vscript->rise);
-	log_message(LOG_INFO, "   Full = %d", vscript->fall);
+	log_message(LOG_INFO, "   Fall = %d", vscript->fall);
 
 	switch (vscript->result) {
 	case VRRP_SCRIPT_STATUS_INIT:
@@ -282,6 +284,7 @@ alloc_vrrp_sync_group(char *gname)
 	new->gname = (char *) MALLOC(size + 1);
 	new->state = VRRP_STATE_INIT;
 	memcpy(new->gname, gname, size);
+	new->global_tracking = 0;
 
 	list_add(vrrp_data->vrrp_sync_group, new);
 }

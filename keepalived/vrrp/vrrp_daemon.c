@@ -17,7 +17,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Copyright (C) 2001-2011 Alexandre Cassen, <acassen@linux-vs.org>
+ * Copyright (C) 2001-2012 Alexandre Cassen, <acassen@gmail.com>
  */
 
 #include "vrrp_daemon.h"
@@ -39,6 +39,9 @@
 #ifdef _WITH_LVS_
   #include "ipvswrapper.h"
 #endif
+#ifdef _WITH_SNMP_
+  #include "vrrp_snmp.h"
+#endif
 #include "list.h"
 #include "main.h"
 #include "memory.h"
@@ -52,7 +55,6 @@ stop_vrrp(void)
 {
 	/* Destroy master thread */
 	signal_handler_destroy();
-	free_vrrp_sockpool(vrrp_data);
 	thread_destroy_master(master);
 
 	/* Clear static entries */
@@ -64,12 +66,17 @@ stop_vrrp(void)
 	free_interface_queue();
 	gratuitous_arp_close();
 	ndisc_close();
+#ifdef _WITH_SNMP_
+	if (snmp)
+		vrrp_snmp_agent_close();
+#endif
 
 	/* Stop daemon */
 	pidfile_rm(vrrp_pidfile);
 
 	/* Clean data */
 	free_global_data(data);
+	free_vrrp_sockpool(vrrp_data);
 	free_vrrp_data(vrrp_data);
 	free_vrrp_buffer();
 
@@ -99,6 +106,10 @@ start_vrrp(void)
 	kernel_netlink_init();
 	gratuitous_arp_init();
 	ndisc_init();
+#ifdef _WITH_SNMP_
+	if (!reload && snmp)
+		vrrp_snmp_agent_init();
+#endif
 
 #ifdef _WITH_LVS_
 	/* Initialize ipvs related */
@@ -153,8 +164,6 @@ int reload_vrrp_thread(thread_t * thread);
 void
 sighup_vrrp(void *v, int sig)
 {
-	log_message(LOG_INFO, "Reloading VRRP child process(%d) on signal",
-		    getpid());
 	thread_add_event(master, reload_vrrp_thread, NULL, 0);
 }
 
@@ -162,7 +171,6 @@ sighup_vrrp(void *v, int sig)
 void
 sigend_vrrp(void *v, int sig)
 {
-	log_message(LOG_INFO, "Terminating VRRP child process on signal");
 	if (master)
 		thread_add_terminate_event(master);
 }
@@ -240,7 +248,7 @@ vrrp_respawn_thread(thread_t * thread)
 	}
 
 	/* We catch a SIGCHLD, handle it */
-	log_message(LOG_INFO, "VRRP child process(%d) died: Respawning", pid);
+	log_message(LOG_ALERT, "VRRP child process(%d) died: Respawning", pid);
 	start_vrrp_child();
 	return 0;
 }
@@ -272,7 +280,7 @@ start_vrrp_child(void)
 	}
 
 	/* Opening local VRRP syslog channel */
-	openlog(PROG_VRRP, LOG_PID | (debug & 1) ? LOG_CONS : 0,
+	openlog(PROG_VRRP, LOG_PID | ((debug & 1) ? LOG_CONS : 0),
 		(log_facility==LOG_DAEMON) ? LOG_LOCAL1 : log_facility);
 
 	/* Child process part, write pidfile */
@@ -289,6 +297,9 @@ start_vrrp_child(void)
 
 	/* change to / dir */
 	ret = chdir("/");
+	if (ret < 0) {
+		log_message(LOG_INFO, "VRRP child process: error chdir");
+	}
 
 	/* Set mask */
 	umask(0);
